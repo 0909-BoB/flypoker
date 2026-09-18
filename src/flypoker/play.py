@@ -68,9 +68,9 @@ def play_match(n_hands: int, decoder_path: str | None, human: bool, seed: int = 
         for step in fly.trajectory:
             print(f"  fly[{step['street']}] action={Action(step['action_idx']).name} "
                   f"equity={step['equity']:.2f} probs={[round(p, 2) for p in step['probs']]}")
-        print(f"  fly payoff this hand: {result.payoff[fly_seat]:+d}  running total: {fly_bankroll:+d}")
+        print(f"  fly payoff this hand: {result.payoff[fly_seat]:+.1f}  running total: {fly_bankroll:+.1f}")
 
-    print(f"\nFinal fly bankroll over {n_hands} hands: {fly_bankroll:+d} ({fly_bankroll / BIG_BLIND:+.1f} bb)")
+    print(f"\nFinal fly bankroll over {n_hands} hands: {fly_bankroll:+.1f} ({fly_bankroll / BIG_BLIND:+.1f} bb)")
 
 
 def main():
