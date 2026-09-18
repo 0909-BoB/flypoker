@@ -106,6 +106,13 @@ class LIFNetwork:
         return {role: self.spike_counts(idx, window_ms) for role, idx in self.idx_by_role.items()
                 if role.startswith("out:")}
 
+    def role_activity(self, roles: list[str] | None = None, window_ms: float = SPIKE_WINDOW_MS) -> dict[str, int]:
+        """Spike counts per named population, for visualization. Defaults to
+        every role (inputs, outputs, and the relay pool)."""
+        roles = roles if roles is not None else list(self.idx_by_role.keys())
+        return {role: self.spike_counts(self.idx_by_role[role], window_ms)
+                for role in roles if role in self.idx_by_role}
+
     def output_spike_vector(self, role: str, window_ms: float = SPIKE_WINDOW_MS) -> np.ndarray:
         """Per-neuron spike counts for one output population, for use as a
         feature vector into a trainable readout (a single aggregate count

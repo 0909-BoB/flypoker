@@ -106,11 +106,27 @@ Watch the trained fly play:
 .venv/bin/python -m flypoker.play --hands 10 --decoder runs/decoder.npz
 ```
 
-Play against it yourself:
+Play against it yourself (terminal):
 
 ```bash
 .venv/bin/python -m flypoker.play --human --decoder runs/decoder.npz
 ```
+
+### Web UI
+
+A browser poker table with a live neuron-activity panel (FastAPI + WebSocket
+backend, plain HTML/CSS/JS frontend, same pattern as flappy-fly's
+backend/frontend split but served from one process):
+
+```bash
+.venv/bin/python -m flypoker.server
+```
+
+Then open http://127.0.0.1:8420. It automatically loads `runs/decoder.npz`
+if present (falls back to an untrained decoder otherwise). Each browser tab
+gets its own hand of heads-up NLHE against the fly, dealt in a background
+thread; the side panel shows real-time spike counts per named neuron
+population as the fly decides each action.
 
 ## Tuning / known rough edges
 

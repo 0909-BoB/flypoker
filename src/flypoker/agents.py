@@ -18,13 +18,15 @@ class FlyAgent:
     for the training loop to consume after the hand resolves."""
 
     def __init__(self, net: LIFNetwork, decoder: SoftmaxDecoder | None = None,
-                 seed: int = 0, reset_brain_each_decision: bool = True):
+                 seed: int = 0, reset_brain_each_decision: bool = True, on_decide=None):
         self.net = net
         n_out = len(net.idx_by_role.get("out:action", []))
         self.decoder = decoder or SoftmaxDecoder(n_features=n_out, seed=seed)
         self.rng = np.random.default_rng(seed)
         self.reset_brain_each_decision = reset_brain_each_decision
         self.trajectory: list[dict] = []
+        self.last_activity: dict[str, int] = {}
+        self.on_decide = on_decide  # optional callback(obs, action, probs, equity, activity)
 
     def new_hand(self):
         self.trajectory = []
@@ -41,10 +43,13 @@ class FlyAgent:
             legal_mask[Action.FOLD] = 0.0
 
         action, probs = self.decoder.act(features, self.rng, legal_mask)
+        self.last_activity = self.net.role_activity()
         self.trajectory.append({
             "features": features, "action_idx": int(action), "probs": probs,
             "equity": equity, "street": obs.street,
         })
+        if self.on_decide:
+            self.on_decide(obs, action, probs, equity, self.last_activity)
         return action
 
 

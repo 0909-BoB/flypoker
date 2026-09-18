@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>flypoker</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>🪰 flypoker <span class="sub">vs a real fly connectome</span></h1>
+      <div class="bankroll">
+        <span>你: <b id="human-bankroll">0</b></span>
+        <span>果蠅: <b id="fly-bankroll">0</b></span>
+        <span class="hand-num">第 <b id="hand-number">-</b> 手</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="table-wrap">
+        <div class="table">
+          <div class="seat fly-seat">
+            <div class="seat-label">🪰 果蠅</div>
+            <div class="cards" id="fly-cards"></div>
+            <div class="stack" id="fly-stack">2000</div>
+          </div>
+
+          <div class="board-area">
+            <div class="board" id="board-cards"></div>
+            <div class="pot">底池 <span id="pot-amount">0</span></div>
+            <div class="street" id="street-label">preflop</div>
+          </div>
+
+          <div class="seat human-seat">
+            <div class="seat-label">你</div>
+            <div class="cards" id="human-cards"></div>
+            <div class="stack" id="human-stack">2000</div>
+          </div>
+        </div>
+
+        <div class="actions" id="actions">
+          <button data-action="FOLD">蓋牌</button>
+          <button data-action="CHECK_CALL">過牌 / 跟注</button>
+          <button data-action="RAISE_SMALL">小加注</button>
+          <button data-action="RAISE_BIG">大加注</button>
+          <button data-action="ALL_IN">全下</button>
+        </div>
+        <div class="status" id="status">連線中...</div>
+      </section>
+
+      <aside class="side-panel">
+        <div class="brain-panel">
+          <h2>果蠅神經活動</h2>
+          <div class="brain-grid" id="brain-grid"></div>
+          <div class="fly-decision" id="fly-decision"></div>
+        </div>
+        <div class="log-panel">
+          <h2>牌局紀錄</h2>
+          <div class="log" id="log"></div>
+        </div>
+      </aside>
+    </main>
+  </div>
+  <script src="main.js"></script>
+</body>
+</html>
