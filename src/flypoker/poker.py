@@ -132,6 +132,7 @@ class Observation:
     opp_stack: int
     is_button: bool
     street_actions: list[Action] = field(default_factory=list)
+    my_bet: int = 0  # this seat's cumulative chips committed so far this hand
 
 
 @dataclass
@@ -163,7 +164,14 @@ class HeadsUpHand:
         self.stacks = list(stacks)
         self.sb, self.bb = small_blind, big_blind
 
-    def play(self, agents: list) -> HandResult:
+    def play(self, agents: list, on_street_dealt=None) -> HandResult:
+        """Play one hand. `on_street_dealt(street, board)`, if given, fires
+        for each street dealt *after* betting has already finished for the
+        hand (both players all-in, or everyone already acted) -- i.e. the
+        streets that would otherwise get dealt out silently in one shot with
+        no agent ever seeing them. It does not fire for streets that still
+        have a real betting round, since those are already visible via each
+        agent's own .act(obs) call."""
         log: list[str] = []
         bets = [0, 0]
         stacks = self.stacks
@@ -173,17 +181,17 @@ class HeadsUpHand:
         stacks[1] -= bb_amt
         bets[0] += sb_amt
         bets[1] += bb_amt
-        pot = 0
         board: list[Card] = []
         folded = [False, False]
+        all_in_runout = False
 
-        for street_i, street in enumerate(STREETS):
+        for street in STREETS:
             if street != "preflop":
                 n_new = {"flop": 3, "turn": 1, "river": 1}[street]
                 board.extend(self.board_deck[:n_new])
                 self.board_deck = self.board_deck[n_new:]
-            if any(folded) or all(s == 0 for s in stacks) and street_i > 0:
-                pass
+                if all_in_runout and on_street_dealt:
+                    on_street_dealt(street, list(board))
             if not any(folded):
                 folded_this_street, bets = self._betting_round(
                     agents, street, board, bets, stacks, folded, log
@@ -192,14 +200,10 @@ class HeadsUpHand:
             if any(folded):
                 break
             if stacks[0] == 0 or stacks[1] == 0:
-                # all-in: run out remaining streets with no more betting
-                continue
+                # all-in: remaining streets get dealt with no more betting
+                all_in_runout = True
 
         pot = bets[0] + bets[1]
-        while len(board) < 5 and not any(folded):
-            n_new = min(1, 5 - len(board))
-            board.extend(self.board_deck[:n_new])
-            self.board_deck = self.board_deck[n_new:]
 
         if any(folded):
             winner = 1 if folded[0] else 0
@@ -253,9 +257,17 @@ class HeadsUpHand:
                     seat=seat, hole=self.hole[seat], board=list(board), street=street,
                     pot=bets[0] + bets[1], to_call=to_call, my_stack=stacks[seat],
                     opp_stack=stacks[other], is_button=(seat == 0),
-                    street_actions=list(actions_taken),
+                    street_actions=list(actions_taken), my_bet=bets[seat],
                 )
-                action = agents[seat].act(obs)
+                result = agents[seat].act(obs)
+                # An agent may return a bare Action (fly/bot: fixed pot-relative
+                # sizing below) or (Action, raise_to) to name an exact total
+                # chip amount to raise to -- how a human player picks their own
+                # bet size from a slider instead of two fixed presets.
+                if isinstance(result, tuple):
+                    action, raise_to = result
+                else:
+                    action, raise_to = result, None
                 progressed = True
                 acted[seat] = True
 
@@ -271,21 +283,23 @@ class HeadsUpHand:
                     bets[seat] += call_amt
                     log.append(f"[{street}] seat{seat} " + ("checks" if to_call == 0 else f"calls {call_amt}"))
                 else:
-                    pot_now = bets[0] + bets[1]
-                    if action == Action.RAISE_SMALL:
-                        raise_amt = int(pot_now * 0.5)
-                    elif action == Action.RAISE_BIG:
-                        raise_amt = int(pot_now * 1.0)
-                    else:  # ALL_IN
-                        raise_amt = stacks[seat]
-                    total = min(to_call + max(raise_amt, self.bb), stacks[seat])
+                    if raise_to is not None:
+                        total = max(to_call + self.bb, raise_to - bets[seat])
+                        total = min(total, stacks[seat])
+                    else:
+                        pot_now = bets[0] + bets[1]
+                        if action == Action.RAISE_SMALL:
+                            raise_amt = int(pot_now * 0.5)
+                        elif action == Action.RAISE_BIG:
+                            raise_amt = int(pot_now * 1.0)
+                        else:  # ALL_IN
+                            raise_amt = stacks[seat]
+                        total = min(to_call + max(raise_amt, self.bb), stacks[seat])
                     stacks[seat] -= total
                     bets[seat] += total
-                    if total < to_call + raise_amt:
-                        acted[other] = False  # short all-in still lets opp act once more only if it was a raise
-                    else:
-                        acted[other] = False
-                    log.append(f"[{street}] seat{seat} raises to {bets[seat]} ({action.name})")
+                    acted[other] = False
+                    tag = f" ({action.name})" if raise_to is None else ""
+                    log.append(f"[{street}] seat{seat} raises to {bets[seat]}{tag}")
                 actions_taken.append(action)
 
             if bets[0] == bets[1] and all(acted.values()):

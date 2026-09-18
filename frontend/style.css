@@ -183,9 +183,61 @@ main { display: grid; grid-template-columns: 1fr 320px; gap: 20px; }
 .actions button:disabled { opacity: 0.3; cursor: not-allowed; }
 .actions button[data-action="FOLD"]:hover:not(:disabled) { background: var(--red); color: #fff; }
 
+.raise-panel[hidden] { display: none; }
+.raise-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.raise-presets { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.raise-presets button {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.raise-presets button:hover { background: var(--accent); color: #221a00; border-color: var(--accent); }
+
+.raise-slider-row { display: flex; align-items: center; gap: 10px; }
+.raise-slider-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.raise-slider-row input[type="number"] {
+  width: 90px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.raise-confirm-row { display: flex; gap: 8px; justify-content: center; }
+.raise-confirm-row button {
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+#raise-confirm { background: var(--accent); color: #221a00; border-color: var(--accent); font-weight: 600; }
+#raise-confirm:hover { filter: brightness(1.08); }
+#raise-cancel { background: var(--panel); color: var(--text-dim); }
+#raise-cancel:hover { color: var(--text); }
+
 .status { text-align: center; margin-top: 10px; font-size: 13px; color: var(--text-dim); min-height: 18px; transition: color 0.2s; }
 .status.waiting { color: var(--blue); }
 .status.your-turn { color: var(--accent); font-weight: 600; }
+.status.error { color: var(--red); font-weight: 600; }
 
 .spinner {
   display: inline-block;

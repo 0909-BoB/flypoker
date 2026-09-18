@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "flypoker",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "flypoker.server"],
+      "port": 8420
+    }
+  ]
+}

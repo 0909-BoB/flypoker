@@ -6,3 +6,4 @@ data/*.feather
 data/circuit.npz
 data/circuit_meta.json
 runs/
+data/hand_histories/

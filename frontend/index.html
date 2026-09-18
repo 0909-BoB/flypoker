@@ -42,9 +42,24 @@
         <div class="actions" id="actions">
           <button data-action="FOLD">蓋牌</button>
           <button data-action="CHECK_CALL">過牌 / 跟注</button>
-          <button data-action="RAISE_SMALL">小加注</button>
-          <button data-action="RAISE_BIG">大加注</button>
+          <button type="button" id="open-raise-btn">加注</button>
           <button data-action="ALL_IN">全下</button>
+        </div>
+        <div class="raise-panel" id="raise-panel" hidden>
+          <div class="raise-presets" id="raise-presets">
+            <button type="button" data-preset="half_pot">1/2 底池</button>
+            <button type="button" data-preset="pot">底池</button>
+            <button type="button" data-preset="two_pot">2x 底池</button>
+            <button type="button" data-preset="max">全下</button>
+          </div>
+          <div class="raise-slider-row">
+            <input type="range" id="raise-slider" min="0" max="0" step="1" value="0">
+            <input type="number" id="raise-number" min="0" max="0" step="1" value="0">
+          </div>
+          <div class="raise-confirm-row">
+            <button type="button" id="raise-cancel">取消</button>
+            <button type="button" id="raise-confirm">加注到 <span id="raise-amount-label">0</span></button>
+          </div>
         </div>
         <div class="status" id="status">連線中...</div>
       </section>

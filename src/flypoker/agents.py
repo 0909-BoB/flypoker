@@ -46,7 +46,7 @@ class FlyAgent:
         self.last_activity = self.net.role_activity()
         self.trajectory.append({
             "features": features, "action_idx": int(action), "probs": probs,
-            "equity": equity, "street": obs.street,
+            "equity": equity, "street": obs.street, "to_call": obs.to_call,
         })
         if self.on_decide:
             self.on_decide(obs, action, probs, equity, self.last_activity)
@@ -56,13 +56,32 @@ class FlyAgent:
 class EquityBot:
     """Simple pot-odds baseline opponent: calls/raises based on Monte Carlo
     equity, with a small randomized bluff frequency so it isn't purely
-    exploitable by a fold-when-behind strategy."""
+    exploitable by a fold-when-behind strategy.
+
+    Raise sizing is randomized across a wide range of pot multiples (not
+    just two fixed presets) so a decoder trained against this bot sees --
+    and learns to read -- the same variety of bet sizes a human free to
+    pick their own amount will actually throw at it. Training only against
+    fixed 0.5x/1.0x-pot raises left the decoder's read of "opponent
+    aggression" poorly calibrated for anything else, part of why it kept
+    over-folding once humans could bet arbitrary amounts.
+    """
 
     def __init__(self, seed: int = 0, bluff_freq: float = 0.08):
         self.rng = np.random.default_rng(seed)
         self.bluff_freq = bluff_freq
 
-    def act(self, obs: Observation) -> Action:
+    def _raise_to(self, obs: Observation, strength: float) -> tuple[Action, int]:
+        # strength in [0, 1]: how big a bet this decision calls for. Mapped
+        # to a randomized pot multiple so sizing varies hand to hand instead
+        # of landing on the same one or two amounts every time.
+        mult = self.rng.uniform(0.3, 0.9) if strength < 0.5 else self.rng.uniform(0.7, 2.0)
+        raise_amt = max(int(obs.pot * mult), 1)
+        total = obs.to_call + raise_amt
+        raise_to = min(obs.my_bet + total, obs.my_bet + obs.my_stack)
+        return Action.RAISE_SMALL, raise_to
+
+    def act(self, obs: Observation):
         equity = monte_carlo_equity(obs.hole, obs.board, [], n_opponents=1, trials=150)
         pot_after_call = obs.pot + obs.to_call
         pot_odds = obs.to_call / pot_after_call if pot_after_call > 0 else 0.0
@@ -71,13 +90,13 @@ class EquityBot:
 
         if obs.to_call == 0:
             if equity > 0.7 or bluffing:
-                return Action.RAISE_BIG if equity > 0.85 else Action.RAISE_SMALL
+                return self._raise_to(obs, equity if equity > 0.7 else 0.9)
             return Action.CHECK_CALL
 
         if equity < pot_odds and not bluffing:
             return Action.FOLD
         if equity > 0.75:
-            return Action.RAISE_BIG if equity > 0.9 else Action.RAISE_SMALL
+            return self._raise_to(obs, equity)
         if bluffing and equity < 0.4:
-            return Action.RAISE_SMALL
+            return self._raise_to(obs, 0.3)
         return Action.CHECK_CALL

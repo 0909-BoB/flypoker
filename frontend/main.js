@@ -15,6 +15,7 @@ const ROLE_ORDER = Object.keys(ROLE_LABELS);
 const BAR_MAX = { "relay": 6000, "out:action": 60 };
 const DEFAULT_IN_MAX = 350;
 const MIN_THINK_MS = 550;
+const RUNOUT_STREET_MS = 1200;
 
 let ws = null;
 let humanSeat = 0;
@@ -22,6 +23,7 @@ let lastStacks = { human: 2000, fly: 2000 };
 let lastPot = 0;
 let msgQueue = [];
 let queueRunning = false;
+let currentObs = null;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -120,10 +122,15 @@ function updateBrainGrid(activity) {
 }
 
 function setActionsEnabled(enabled, legalActions = []) {
-  document.querySelectorAll("#actions button").forEach((btn) => {
+  document.querySelectorAll("#actions button[data-action]").forEach((btn) => {
     const action = btn.dataset.action;
     btn.disabled = !enabled || (legalActions.length > 0 && !legalActions.includes(action));
   });
+  // The raise button opens the slider panel rather than sending a fixed
+  // action directly, so it's gated on whether raising is legal at all
+  // (always true in this engine except when it's simply not our turn).
+  el("open-raise-btn").disabled = !enabled || (legalActions.length > 0 && !legalActions.includes("RAISE_SMALL"));
+  if (!enabled) closeRaisePanel();
 }
 
 function setStatus(text, cls = "") {
@@ -173,10 +180,16 @@ async function processQueue() {
     const msg = msgQueue.shift();
     if (msg.type === "fly_decision") {
       await sleep(MIN_THINK_MS);
+    } else if (msg.type === "runout_street") {
+      await sleep(RUNOUT_STREET_MS);
     }
     renderMessage(msg);
     if (msg.type === "your_turn" || msg.type === "hand_result") {
       stopFlyThinking();
+    } else if (msg.type === "runout_street") {
+      flySeatEl().classList.remove("thinking");
+      document.querySelector(".brain-panel").classList.add("thinking");
+      setStatus(`雙方全下,開出 ${msg.street.toUpperCase()}...`, "waiting");
     } else {
       startFlyThinking();
     }
@@ -207,6 +220,7 @@ function renderMessage(msg) {
     }
     case "your_turn": {
       const obs = msg.obs;
+      currentObs = obs;
       el("street-label").textContent = obs.street;
       renderCards("board-cards", obs.board);
       setPot(obs.pot);
@@ -216,6 +230,14 @@ function renderMessage(msg) {
       humanSeatEl().classList.add("active-turn");
       flySeatEl().classList.remove("active-turn");
       setStatus(obs.to_call > 0 ? `輪到你:需跟注 ${obs.to_call}` : "輪到你:可過牌或下注", "your-turn");
+      break;
+    }
+    case "runout_street": {
+      el("street-label").textContent = msg.street;
+      renderCards("board-cards", msg.board);
+      updateBrainGrid(msg.activity);
+      el("fly-decision").innerHTML = `[${msg.street}] 雙方全下,自動開牌 (果蠅勝率估計 ${(msg.equity * 100).toFixed(0)}%)`;
+      log(`  [${msg.street}] 全下開牌: ${msg.board.join(" ")}`);
       break;
     }
     case "fly_decision": {
@@ -247,25 +269,96 @@ function renderMessage(msg) {
       setStatus("這手結束,準備下一手...");
       break;
     }
+    case "error": {
+      stopFlyThinking();
+      setActionsEnabled(false);
+      setStatus(`發生錯誤,請重新整理頁面: ${msg.message}`, "error");
+      log(`  [錯誤] ${msg.message}`, "lose");
+      break;
+    }
   }
 }
 
 function actionLabel(name) {
   return {
-    FOLD: "蓋牌", CHECK_CALL: "過牌/跟注", RAISE_SMALL: "小加注",
-    RAISE_BIG: "大加注", ALL_IN: "全下",
+    FOLD: "蓋牌", CHECK_CALL: "過牌/跟注", RAISE_SMALL: "加注",
+    RAISE_BIG: "加注", ALL_IN: "全下",
   }[name] || name;
 }
 
-document.querySelectorAll("#actions button").forEach((btn) => {
+function sendAction(action, amount) {
+  const badgeText = amount != null ? `加注到 ${amount}` : actionLabel(action);
+  showBadge(humanSeatEl(), badgeText, action === "FOLD");
+  const payload = { type: "action", action };
+  if (amount != null) payload.amount = amount;
+  ws.send(JSON.stringify(payload));
+  setActionsEnabled(false);
+  humanSeatEl().classList.remove("active-turn");
+  startFlyThinking();
+}
+
+document.querySelectorAll("#actions button[data-action]").forEach((btn) => {
   btn.addEventListener("click", () => {
     if (btn.disabled) return;
-    showBadge(humanSeatEl(), actionLabel(btn.dataset.action), btn.dataset.action === "FOLD");
-    ws.send(JSON.stringify({ type: "action", action: btn.dataset.action }));
-    setActionsEnabled(false);
-    humanSeatEl().classList.remove("active-turn");
-    startFlyThinking();
+    sendAction(btn.dataset.action);
   });
+});
+
+// --- Raise slider panel: mirrors the bet-sizing UX of mainstream poker
+// clients (quick pot-relative presets + a free-drag slider/number input),
+// instead of only offering two fixed preset sizes.
+const raisePanel = el("raise-panel");
+const raiseSlider = el("raise-slider");
+const raiseNumber = el("raise-number");
+const raiseAmountLabel = el("raise-amount-label");
+
+function closeRaisePanel() {
+  raisePanel.hidden = true;
+}
+
+function setRaiseAmount(value) {
+  const min = Number(raiseSlider.min), max = Number(raiseSlider.max);
+  const clamped = Math.min(max, Math.max(min, Math.round(value)));
+  raiseSlider.value = clamped;
+  raiseNumber.value = clamped;
+  raiseAmountLabel.textContent = clamped;
+}
+
+el("open-raise-btn").addEventListener("click", () => {
+  if (el("open-raise-btn").disabled || !currentObs) return;
+  const min = currentObs.min_raise;
+  const max = currentObs.max_raise;
+  raiseSlider.min = min;
+  raiseSlider.max = max;
+  raiseNumber.min = min;
+  raiseNumber.max = max;
+  setRaiseAmount(currentObs.raise_presets.half_pot ?? min);
+  raisePanel.hidden = false;
+});
+
+el("raise-cancel").addEventListener("click", closeRaisePanel);
+
+raiseSlider.addEventListener("input", () => setRaiseAmount(raiseSlider.value));
+raiseNumber.addEventListener("input", () => setRaiseAmount(raiseNumber.value));
+
+document.querySelectorAll("#raise-presets button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (!currentObs) return;
+    const preset = btn.dataset.preset;
+    const value = preset === "max" ? currentObs.max_raise : currentObs.raise_presets[preset];
+    setRaiseAmount(value);
+  });
+});
+
+el("raise-confirm").addEventListener("click", () => {
+  if (!currentObs) return;
+  const amount = Number(raiseNumber.value);
+  closeRaisePanel();
+  if (amount >= currentObs.max_raise) {
+    sendAction("ALL_IN");
+  } else {
+    sendAction("RAISE_SMALL", amount);
+  }
 });
 
 setActionsEnabled(false);

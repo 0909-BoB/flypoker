@@ -24,6 +24,15 @@ def encode(obs: Observation, dead_cards: list | None = None) -> dict[str, float]
 
     position_signal = 1.0 if obs.is_button else 0.0
 
+    # Which kind of action we're facing (fold/check-call/raise/all-in), not
+    # a continuous read of the real bet size. An earlier version tried
+    # `min(pot_odds * 1.5, 1.0)` so this channel would carry real information
+    # once raises could be any amount instead of two fixed presets -- but
+    # every trained decoder tested against it collapsed to an
+    # input-independent verdict (identical decision regardless of equity).
+    # pot_odds already carries the actual bet-size information faithfully
+    # (it's untouched by this); this channel is just a coarse "how
+    # aggressive was the action type" tag on top of it.
     if obs.street_actions:
         last = obs.street_actions[-1]
         aggression = {
