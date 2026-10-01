@@ -6,6 +6,74 @@ small trainable readout layer on top. The web UI is a 4-handed table (you +
 3 flies); the training/CLI pipeline underneath is still heads-up (fly vs. a
 rule-based baseline bot).
 
+## Quick start (just want to play)
+
+The data the game needs to run (connectome, 3D brain model, starting AI
+weights) is already in this repo -- no neuPrint account/token, no large
+downloads. The detailed "Setup" section further down is only for rebuilding
+that data yourself; skip it to just play.
+
+**With Docker** (needs [Docker Desktop](https://www.docker.com/products/docker-desktop/)):
+
+```bash
+git clone https://github.com/0909-BoB/flypoker.git
+cd flypoker
+docker build -t flypoker .
+docker run -p 8420:8420 flypoker
+```
+
+**Or with Python 3.10+** (no Docker):
+
+```bash
+git clone https://github.com/0909-BoB/flypoker.git
+cd flypoker
+python3 -m venv .venv
+.venv/bin/pip install -e .
+.venv/bin/python -m flypoker.server
+```
+
+Either way, open **http://localhost:8420**.
+
+Each machine's learned decoder runs independently (there's no shared server
+across downloads). With the Python method it's saved to `runs/` as you
+play, so it survives a restart; with the plain Docker command above it
+doesn't (add `-v flypoker_data:/data -e FLYPOKER_LEARN_DIR=/data/runs` to
+`docker run` if you want it to).
+
+### 快速開始（只是想玩遊戲）
+
+遊戲需要的資料（神經連結圖、3D 大腦模型、起始 AI 權重）都已經包在這個 repo
+裡，不用申請 neuPrint 帳號或代幣，也不用額外下載大檔案。後面比較詳細的
+「Setup」章節是給想要自己重新產生這些資料的人看的，只是想玩遊戲的話可以
+跳過。
+
+**用 Docker**（電腦要先裝 [Docker Desktop](https://www.docker.com/products/docker-desktop/)）：
+
+```bash
+git clone https://github.com/0909-BoB/flypoker.git
+cd flypoker
+docker build -t flypoker .
+docker run -p 8420:8420 flypoker
+```
+
+**或用 Python 3.10 以上版本**（不需要 Docker）：
+
+```bash
+git clone https://github.com/0909-BoB/flypoker.git
+cd flypoker
+python3 -m venv .venv
+.venv/bin/pip install -e .
+.venv/bin/python -m flypoker.server
+```
+
+不管哪一種，開啟瀏覽器打開 **http://localhost:8420** 就能玩。
+
+每台電腦跑起來的 AI 學習進度是各自獨立的，彼此不會互通。用 Python 方式跑
+的話，學習進度會邊玩邊存進 `runs/` 資料夾，重開伺服器也不會不見；上面那
+段最簡單的 Docker 指令則不會保留（重開 container 進度就沒了），如果想要
+保留，在 `docker run` 後面加上
+`-v flypoker_data:/data -e FLYPOKER_LEARN_DIR=/data/runs` 即可。
+
 ## Honest framing, up front
 
 A fly's brain has no concept of pot odds, stack-to-pot ratio, or bluffing —
