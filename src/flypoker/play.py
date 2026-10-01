@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import random
 
-from .agents import EquityBot, FlyAgent
+from .agents import EquityBot, FlyAgent, feature_dim
 from .brain import LIFNetwork
 from .decoder import SoftmaxDecoder
 from .poker import Action, HeadsUpHand, Observation
@@ -39,8 +39,7 @@ class HumanAgent:
 
 def play_match(n_hands: int, decoder_path: str | None, human: bool, seed: int = 0):
     net = LIFNetwork()
-    n_features = len(net.idx_by_role.get("out:action", []))
-    decoder = SoftmaxDecoder(n_features=n_features, seed=seed)
+    decoder = SoftmaxDecoder(n_features=feature_dim(net), seed=seed)
     if decoder_path:
         decoder.load(decoder_path)
         print(f"loaded trained decoder from {decoder_path}")

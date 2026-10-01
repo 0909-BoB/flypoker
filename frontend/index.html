@@ -4,79 +4,209 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>flypoker</title>
+<link rel="icon" href="/favicon.ico?v=2" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=2">
+<link rel="icon" type="image/png" sizes="180x180" href="/apple-touch-icon.png?v=2">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="app">
-    <header>
-      <h1>🪰 flypoker <span class="sub">vs a real fly connectome</span></h1>
-      <div class="bankroll">
-        <span>你: <b id="human-bankroll">0</b></span>
-        <span>果蠅: <b id="fly-bankroll">0</b></span>
-        <span class="hand-num">第 <b id="hand-number">-</b> 手</span>
+    <div id="setup-screen" class="setup-screen">
+      <div class="setup-card">
+        <img src="fly-icon.svg" class="setup-icon" alt="">
+        <h1>flypoker</h1>
+        <p class="setup-sub">你 + 3 隻性格隨機的果蠅</p>
+        <label class="setup-field">
+          買入籌碼
+          <input type="number" id="setup-stack" value="2000" min="1" step="1">
+        </label>
+        <label class="setup-field">
+          大盲注（小盲 = 大盲的一半）
+          <input type="number" id="setup-bb" value="20" min="1" step="1">
+        </label>
+        <div class="setup-error" id="setup-error" hidden></div>
+        <button type="button" id="setup-start-btn" class="btn-primary">開始遊戲</button>
       </div>
-    </header>
+    </div>
 
-    <main>
-      <section class="table-wrap">
-        <div class="table">
-          <div class="seat fly-seat">
-            <div class="seat-label">🪰 果蠅</div>
-            <div class="cards" id="fly-cards"></div>
-            <div class="stack" id="fly-stack">2000</div>
+    <div id="game-screen" hidden>
+      <header>
+        <h1><img src="fly-logo.jpg" class="brand-icon" alt="flypoker"> flypoker <span class="sub">你 + 3 隻性格隨機的果蠅</span></h1>
+        <div class="bankroll" id="bankroll-row">
+          <span class="bankroll-title">淨損益</span>
+          <span>你: <b id="bankroll-human">0</b></span>
+          <span>果蠅一: <b id="bankroll-fly1">0</b></span>
+          <span>果蠅二: <b id="bankroll-fly2">0</b></span>
+          <span>果蠅三: <b id="bankroll-fly3">0</b></span>
+          <span class="hand-num">第 <b id="hand-number">-</b> 手</span>
+        </div>
+      </header>
+
+      <main>
+        <section class="table-wrap">
+          <div class="table-oval">
+            <div class="oval-felt"></div>
+
+            <div class="seat-pos seat-pos-left">
+              <div class="seat fly-seat" id="seat-fly1">
+                <div class="cards" id="cards-fly1"></div>
+                <div class="avatar-wrap">
+                  <div class="avatar"><img src="fly-avatar.jpg" alt=""></div>
+                  <div class="pos-badge" id="pos-fly1"></div>
+                </div>
+                <div class="seat-info">
+                  <div class="seat-label">果蠅一</div>
+                  <div class="stack" id="stack-fly1">2000</div>
+                </div>
+                <div class="thinking-pill" id="thinking-fly1" hidden>
+                  <span class="dot"></span><span class="dot"></span><span class="dot"></span> 思考中
+                </div>
+              </div>
+            </div>
+
+            <div class="seat-pos seat-pos-top">
+              <div class="seat fly-seat" id="seat-fly2">
+                <div class="cards" id="cards-fly2"></div>
+                <div class="avatar-wrap">
+                  <div class="avatar"><img src="fly-avatar.jpg" alt=""></div>
+                  <div class="pos-badge" id="pos-fly2"></div>
+                </div>
+                <div class="seat-info">
+                  <div class="seat-label">果蠅二</div>
+                  <div class="stack" id="stack-fly2">2000</div>
+                </div>
+                <div class="thinking-pill" id="thinking-fly2" hidden>
+                  <span class="dot"></span><span class="dot"></span><span class="dot"></span> 思考中
+                </div>
+              </div>
+            </div>
+
+            <div class="seat-pos seat-pos-right">
+              <div class="seat fly-seat" id="seat-fly3">
+                <div class="cards" id="cards-fly3"></div>
+                <div class="avatar-wrap">
+                  <div class="avatar"><img src="fly-avatar.jpg" alt=""></div>
+                  <div class="pos-badge" id="pos-fly3"></div>
+                </div>
+                <div class="seat-info">
+                  <div class="seat-label">果蠅三</div>
+                  <div class="stack" id="stack-fly3">2000</div>
+                </div>
+                <div class="thinking-pill" id="thinking-fly3" hidden>
+                  <span class="dot"></span><span class="dot"></span><span class="dot"></span> 思考中
+                </div>
+              </div>
+            </div>
+
+            <div class="board-center">
+              <div class="board-center-top">
+                <div class="pill">底池 <b id="pot-amount">0</b></div>
+                <div class="hand-rank" id="hand-rank" hidden></div>
+              </div>
+              <div class="board" id="board-cards"></div>
+              <div class="street" id="street-label">翻牌前</div>
+            </div>
+
+            <div class="seat-pos seat-pos-bottom">
+              <div class="seat human-seat" id="seat-human">
+                <div class="cards" id="human-cards"></div>
+                <div class="avatar-wrap">
+                  <div class="avatar">你</div>
+                  <div class="pos-badge" id="pos-human"></div>
+                </div>
+                <div class="seat-info">
+                  <div class="seat-label">你</div>
+                  <div class="stack" id="human-stack">2000</div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div class="board-area">
-            <div class="board" id="board-cards"></div>
-            <div class="pot">底池 <span id="pot-amount">0</span></div>
-            <div class="street" id="street-label">preflop</div>
+          <div class="actions" id="actions">
+            <button data-action="FOLD">蓋牌</button>
+            <button data-action="CHECK_CALL" id="check-call-btn">過牌 / 跟注</button>
+            <button type="button" id="open-raise-btn">加注</button>
+            <button data-action="ALL_IN">全下</button>
           </div>
+          <div class="turn-timer" id="turn-timer" hidden>
+            <div class="turn-timer-track"><div class="turn-timer-fill" id="turn-timer-fill"></div></div>
+            <span class="turn-timer-text" id="turn-timer-text">15 秒</span>
+          </div>
+          <div class="raise-panel" id="raise-panel" hidden>
+            <div class="raise-presets" id="raise-presets">
+              <button type="button" data-preset="half_pot">50%</button>
+              <button type="button" data-preset="pot">100%</button>
+              <button type="button" data-preset="two_pot">200%</button>
+              <button type="button" data-preset="max">全下</button>
+            </div>
+            <div class="raise-range" id="raise-range"></div>
+            <div class="raise-slider-row">
+              <input type="range" id="raise-slider" min="0" max="0" step="1" value="0">
+              <input type="number" id="raise-number" min="0" max="0" step="1" value="0" inputmode="numeric" aria-label="加注金額">
+            </div>
+            <div class="raise-confirm-row">
+              <button type="button" id="raise-cancel">取消</button>
+              <button type="button" id="raise-confirm">加注到 <span id="raise-amount-label">0</span></button>
+            </div>
+          </div>
+          <div class="status" id="status">連線中...</div>
+        </section>
 
-          <div class="seat human-seat">
-            <div class="seat-label">你</div>
-            <div class="cards" id="human-cards"></div>
-            <div class="stack" id="human-stack">2000</div>
+        <aside class="side-panel">
+          <div class="brain-panel">
+            <h2>即時神經迴路 <span class="circuit-note" id="circuit-note"></span></h2>
+            <div class="circuit-focus" id="circuit-focus">目前顯示：-</div>
+            <div class="brain3d" id="brain3d"></div>
+            <div class="san-panel" id="san-panel">
+              <div class="san-title">SAN 值 <span class="san-hint">越低越慌</span></div>
+              <div class="san-row" id="san-fly1">
+                <span class="san-name">果蠅一</span>
+                <div class="san-track"><div class="san-fill"></div></div>
+                <span class="san-val">100</span>
+                <span class="san-state">冷靜</span>
+              </div>
+              <div class="san-row" id="san-fly2">
+                <span class="san-name">果蠅二</span>
+                <div class="san-track"><div class="san-fill"></div></div>
+                <span class="san-val">100</span>
+                <span class="san-state">冷靜</span>
+              </div>
+              <div class="san-row" id="san-fly3">
+                <span class="san-name">果蠅三</span>
+                <div class="san-track"><div class="san-fill"></div></div>
+                <span class="san-val">100</span>
+                <span class="san-state">冷靜</span>
+              </div>
+              <div class="san-reason" id="san-reason"></div>
+            </div>
+            <div class="fly-decision" id="fly-decision"></div>
           </div>
-        </div>
-
-        <div class="actions" id="actions">
-          <button data-action="FOLD">蓋牌</button>
-          <button data-action="CHECK_CALL">過牌 / 跟注</button>
-          <button type="button" id="open-raise-btn">加注</button>
-          <button data-action="ALL_IN">全下</button>
-        </div>
-        <div class="raise-panel" id="raise-panel" hidden>
-          <div class="raise-presets" id="raise-presets">
-            <button type="button" data-preset="half_pot">1/2 底池</button>
-            <button type="button" data-preset="pot">底池</button>
-            <button type="button" data-preset="two_pot">2x 底池</button>
-            <button type="button" data-preset="max">全下</button>
+          <div class="log-panel">
+            <h2>牌局紀錄</h2>
+            <div class="log" id="log"></div>
           </div>
-          <div class="raise-slider-row">
-            <input type="range" id="raise-slider" min="0" max="0" step="1" value="0">
-            <input type="number" id="raise-number" min="0" max="0" step="1" value="0">
-          </div>
-          <div class="raise-confirm-row">
-            <button type="button" id="raise-cancel">取消</button>
-            <button type="button" id="raise-confirm">加注到 <span id="raise-amount-label">0</span></button>
-          </div>
-        </div>
-        <div class="status" id="status">連線中...</div>
-      </section>
-
-      <aside class="side-panel">
-        <div class="brain-panel">
-          <h2>果蠅神經活動</h2>
-          <div class="brain-grid" id="brain-grid"></div>
-          <div class="fly-decision" id="fly-decision"></div>
-        </div>
-        <div class="log-panel">
-          <h2>牌局紀錄</h2>
-          <div class="log" id="log"></div>
-        </div>
-      </aside>
-    </main>
+        </aside>
+      </main>
+    </div>
   </div>
+  <div id="rebuy-dialog" class="rebuy-dialog" hidden>
+    <div class="rebuy-card">
+      <h2>籌碼輸光了</h2>
+      <p class="rebuy-sub">補碼後繼續下一手，或離開牌桌回到設定畫面。</p>
+      <label class="setup-field">
+        補碼金額
+        <input type="number" id="rebuy-amount" min="1" step="1" value="2000">
+      </label>
+      <div class="setup-error" id="rebuy-error" hidden></div>
+      <div class="rebuy-actions">
+        <button type="button" id="rebuy-leave">離桌</button>
+        <button type="button" id="rebuy-confirm" class="btn-primary">補碼繼續</button>
+      </div>
+    </div>
+  </div>
+  <script type="importmap">{"imports": {"three": "./vendor/three.module.js"}}</script>
+  <script type="module" src="brain3d.js"></script>
   <script src="main.js"></script>
 </body>
 </html>

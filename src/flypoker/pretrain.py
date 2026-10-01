@@ -24,7 +24,7 @@ import time
 
 import numpy as np
 
-from .agents import N_SIM_STEPS
+from .agents import N_SIM_STEPS, brain_features, feature_dim
 from .brain import LIFNetwork
 from .decoder import SoftmaxDecoder
 from .encoder import INJECT_GAIN
@@ -61,6 +61,12 @@ def _encode_example(ex: dict) -> dict[str, float]:
         "in:equity": equity * INJECT_GAIN,
         "in:pot_odds": pot_odds * INJECT_GAIN,
         "in:spr": spr_norm * INJECT_GAIN,
+        # Stack-aware channels: only commit has a usable source here (the
+        # dataset has no big-blind or opponent-stack info), the rest stay
+        # neutral so pretraining doesn't bake in a made-up stack signal.
+        "in:commit": min(to_call_approx / ex["bankroll"], 1.0) * INJECT_GAIN if ex["bankroll"] > 0 else 0.0,
+        "in:depth": 0.0,
+        "in:rel_stack": 0.5 * INJECT_GAIN,
         "in:street": street_norm * INJECT_GAIN,
         "in:position": (1.0 if ex["is_button"] else 0.0) * INJECT_GAIN,
         "in:opp_aggression": 0.0,
@@ -70,8 +76,7 @@ def _encode_example(ex: dict) -> dict[str, float]:
 def pretrain(tgz_path: str, max_hands: int, out_path: str, seed: int = 0,
              lr: float = 0.05, log_every: int = 500) -> SoftmaxDecoder:
     net = LIFNetwork()
-    n_features = len(net.idx_by_role.get("out:action", []))
-    decoder = SoftmaxDecoder(n_features=n_features, seed=seed)
+    decoder = SoftmaxDecoder(n_features=feature_dim(net), seed=seed)
 
     t0 = time.time()
     n = 0
@@ -79,8 +84,8 @@ def pretrain(tgz_path: str, max_hands: int, out_path: str, seed: int = 0,
     for ex in iter_showdown_examples(tgz_path, max_hands=max_hands):
         inputs = _encode_example(ex)
         net.reset()
-        net.run(inputs, n_steps=N_SIM_STEPS)
-        features = net.output_spike_vector("out:action")
+        net.run(inputs, n_steps=N_SIM_STEPS, record=True)
+        features = brain_features(net)
 
         probs = decoder.policy(features)
         predicted = int(np.argmax(np.where(NON_FOLD_MASK > 0, probs, -1.0)))

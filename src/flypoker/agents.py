@@ -9,6 +9,16 @@ from .encoder import encode
 from .poker import Action, Observation, monte_carlo_equity
 
 N_SIM_STEPS = 150
+N_FEATURE_WINDOWS = 3
+
+
+def feature_dim(net: LIFNetwork) -> int:
+    return len(net.idx_by_role.get("out:action", [])) * N_FEATURE_WINDOWS
+
+
+def brain_features(net: LIFNetwork) -> np.ndarray:
+    """Decoder input for the run that just finished (needs run(record=True))."""
+    return net.output_window_features("out:action", N_FEATURE_WINDOWS, N_SIM_STEPS)
 
 
 class FlyAgent:
@@ -20,13 +30,17 @@ class FlyAgent:
     def __init__(self, net: LIFNetwork, decoder: SoftmaxDecoder | None = None,
                  seed: int = 0, reset_brain_each_decision: bool = True, on_decide=None):
         self.net = net
-        n_out = len(net.idx_by_role.get("out:action", []))
-        self.decoder = decoder or SoftmaxDecoder(n_features=n_out, seed=seed)
+        self.decoder = decoder or SoftmaxDecoder(n_features=feature_dim(net), seed=seed)
         self.rng = np.random.default_rng(seed)
         self.reset_brain_each_decision = reset_brain_each_decision
         self.trajectory: list[dict] = []
         self.last_activity: dict[str, int] = {}
-        self.on_decide = on_decide  # optional callback(obs, action, probs, equity, activity)
+        # optional callback(obs, action, probs, equity, activity, spikes) --
+        # `spikes` is a list of (t_ms, neuron_idx) covering the whole
+        # decision (for the web UI's live circuit view), or None if nobody
+        # asked for it (self-play training leaves on_decide unset, so this
+        # recording -- cheap, but not free -- never runs then).
+        self.on_decide = on_decide
 
     def new_hand(self):
         self.trajectory = []
@@ -35,21 +49,28 @@ class FlyAgent:
         if self.reset_brain_each_decision:
             self.net.reset()
         inputs, equity = encode(obs)
-        self.net.run(inputs, n_steps=N_SIM_STEPS)
-        features = self.net.output_spike_vector("out:action")
+        self.net.run(inputs, n_steps=N_SIM_STEPS, record=True)
+        features = brain_features(self.net)
 
         legal_mask = np.ones(N_ACTIONS)
         if obs.to_call == 0:
             legal_mask[Action.FOLD] = 0.0
+        # No point offering a sized raise when the call already commits the
+        # whole stack, or the stack is a big blind or less -- those can only
+        # ever be fold / call / shove.
+        if obs.to_call >= obs.my_stack or obs.my_stack <= obs.big_blind:
+            legal_mask[Action.RAISE_SMALL] = 0.0
+            legal_mask[Action.RAISE_BIG] = 0.0
 
         action, probs = self.decoder.act(features, self.rng, legal_mask)
         self.last_activity = self.net.role_activity()
         self.trajectory.append({
             "features": features, "action_idx": int(action), "probs": probs,
             "equity": equity, "street": obs.street, "to_call": obs.to_call,
+            "my_stack": obs.my_stack, "big_blind": obs.big_blind,
         })
         if self.on_decide:
-            self.on_decide(obs, action, probs, equity, self.last_activity)
+            self.on_decide(obs, action, probs, equity, self.last_activity, self.net.last_recording)
         return action
 
 

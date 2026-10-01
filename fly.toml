@@ -1,0 +1,37 @@
+# Fly.io deploy config. Not used until you run `fly launch` / `fly deploy` --
+# see the "部署" section in README.md for the step-by-step.
+#
+# Why Fly.io: this app needs one single long-running process (game state and
+# the shared learning hub live in memory -- see Dockerfile's note on why it
+# can't run as multiple workers) with real WebSocket support and a small
+# persistent disk for runs/ (the learned decoder + hand log, which should
+# survive restarts and deploys). Fly's free/hobby tier covers all three; a
+# platform without persistent volumes (e.g. a serverless/edge-function host)
+# would silently reset what the flies have learned on every deploy.
+
+app = "flypoker"               # must be globally unique on Fly -- change this
+primary_region = "nrt"         # Tokyo; pick whatever's closest to your players
+
+[build]
+
+[env]
+  # HOST/PORT are read by src/flypoker/server.py's main(). Fly's internal_port
+  # below must match PORT.
+  PORT = "8420"
+  FLYPOKER_LEARN_DIR = "/data/runs"
+
+[[mounts]]
+  source = "flypoker_data"     # created automatically on first `fly deploy`
+  destination = "/data"
+
+[http_service]
+  internal_port = 8420
+  force_https = true
+  auto_stop_machines = false   # a stopped machine would drop every open game
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

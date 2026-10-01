@@ -2,8 +2,18 @@
 .env
 __pycache__/
 *.pyc
+.DS_Store
 data/*.feather
-data/circuit.npz
-data/circuit_meta.json
-runs/
+
+# Training dataset (970MB) -- not needed to run the game, only to re-pretrain.
 data/hand_histories/
+
+# Backup copies made mid-development; not read by any code.
+data/circuit_meta.orig.json
+data/circuit_layout.orig.json
+
+# runs/ is per-deployment live state (the learned decoder that keeps adapting,
+# the hand-by-hand log, training artifacts) -- it must NOT be committed, except
+# decoder.npz, the distilled prior every deployment starts from.
+runs/*
+!runs/decoder.npz

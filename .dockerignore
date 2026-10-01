@@ -1,0 +1,19 @@
+.git/
+.venv/
+__pycache__/
+*.pyc
+.env
+tests/
+scripts/
+README.md
+
+# The 970MB pretraining dataset and dev-time backup copies -- not read at
+# runtime, only by scripts/ (which isn't shipped either; see above).
+data/hand_histories/
+data/*.orig.json
+
+# runs/ is per-deployment live state (the learned decoder, hand-by-hand log,
+# training artifacts) -- a fresh image should start from the committed prior
+# only, same reasoning as .gitignore's runs/* exception.
+runs/*
+!runs/decoder.npz

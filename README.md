@@ -1,8 +1,10 @@
 # flypoker
 
 A subgraph of a real fly brain (MaleCNS v1.0 connectome, Janelia/Google, 2026)
-plays heads-up no-limit Texas Hold'em, via a spiking neural network simulation
-with a small trainable readout layer on top.
+plays no-limit Texas Hold'em, via a spiking neural network simulation with a
+small trainable readout layer on top. The web UI is a 4-handed table (you +
+3 flies); the training/CLI pipeline underneath is still heads-up (fly vs. a
+rule-based baseline bot).
 
 ## Honest framing, up front
 
@@ -45,7 +47,9 @@ population to arbitrary named input/output populations.
 
 ```
 src/flypoker/
-  poker.py        heads-up NLHE engine: hand evaluation, betting, discretized actions
+  poker.py        NLHE engine: hand evaluation, betting, discretized actions.
+                   HeadsUpHand (2 players, used by train.py/pretrain.py/play.py)
+                   and MultiWayHand (N players + side pots, used by the web UI)
   brain.py         leaky integrate-and-fire simulator over the connectome subgraph
   synthetic_circuit.py   placeholder random circuit (same file schema) for dev without a token
   encoder.py       game state -> current injection into named input populations
@@ -54,10 +58,14 @@ src/flypoker/
   hand_history_parser.py  parses the real IRC Poker Database into (state, action) examples
   pretrain.py      supervised behavior-cloning warm-start from real hand histories
   train.py         self-play REINFORCE training loop (optionally warm-started from pretrain.py)
-  play.py          CLI to watch a match, or play against the fly yourself
+  play.py          CLI to watch a heads-up match, or play against the fly yourself
+  server.py        FastAPI/WebSocket backend for the 4-handed web UI (see below)
 scripts/
   build_circuit.py  pulls the real MaleCNS subgraph via neuPrint (needs NEUPRINT_TOKEN)
+  build_circuit_layout.py  precomputes a 2D layout of that subgraph for the web UI's live circuit view
+  fetch_hand_history_dataset.py  downloads the IRC Poker Database for pretrain.py
 data/               circuit.npz + circuit_meta.json (gitignored, built locally)
+                    circuit_layout.json (gitignored, built locally)
                     hand_histories/IRCdata.tgz (gitignored, downloaded -- see below)
 ```
 
@@ -86,6 +94,22 @@ Either:
   docstring) plus their strongest direct synaptic partners, capped at 4,000
   partners so the simulation stays fast, and writes `data/circuit.npz` /
   `data/circuit_meta.json`.
+
+Either way, also build the layout the web UI's live circuit view uses:
+
+```bash
+.venv/bin/python scripts/build_circuit_layout.py
+```
+
+There's no literal 3D position for these neurons in the source data (see
+`build_circuit_layout.py`'s docstring) -- it computes a spectral layout
+from the real synaptic adjacency matrix instead, which is a standard way
+to embed a large sparse graph in 2D such that strongly-connected neurons
+end up near each other. Real connectivity, not a decorative/random layout,
+just not the neurons' literal position in the fly's head. Re-run this
+after rebuilding `circuit.npz`, and restart `flypoker.server` afterward --
+it caches the layout in memory per process, so it won't pick up a rebuilt
+file until restarted.
 
 ### Hand history data (optional, for pretraining)
 
@@ -149,11 +173,13 @@ Play against it yourself (terminal):
 .venv/bin/python -m flypoker.play --human --decoder runs/decoder.npz
 ```
 
-### Web UI
+### Web UI: 4-handed table (you + 3 flies)
 
-A browser poker table with a live neuron-activity panel (FastAPI + WebSocket
-backend, plain HTML/CSS/JS frontend, same pattern as flappy-fly's
-backend/frontend split but served from one process):
+A browser poker table with a live neuron-activity panel (FastAPI +
+WebSocket backend, plain HTML/CSS/JS frontend, same pattern as flappy-fly's
+backend/frontend split but served from one process). You play against
+three flies at once, not one, with side pots when stacks go all-in
+unevenly:
 
 ```bash
 .venv/bin/python -m flypoker.server
@@ -161,9 +187,39 @@ backend/frontend split but served from one process):
 
 Then open http://127.0.0.1:8420. It automatically loads `runs/decoder.npz`
 if present (falls back to an untrained decoder otherwise). Each browser tab
-gets its own hand of heads-up NLHE against the fly, dealt in a background
-thread; the side panel shows real-time spike counts per named neuron
-population as the fly decides each action.
+gets its own game running in a background thread, using `poker.py`'s
+`MultiWayHand` (N players, generalized blind/action-order rules, standard
+side-pot layering in `compute_side_pots`) -- a separate class from the
+still-heads-up-only `HeadsUpHand` that `train.py`/`pretrain.py`/`play.py`
+use, not a rewrite of it, so that self-play/CLI path is untouched by any
+of this.
+
+Every fly's personality is randomized fresh each time a game starts --
+`server.py`'s `sample_personality_bias` draws two independent axes per fly
+(aggression, fold tendency), each interpolated between the "aggressive" and
+"tight" bias presets this project already validated for stability (see
+"Tuning" below for why arbitrary new bias values aren't used instead). All
+three flies share the same trained `W` (equity-sensitivity) throughout --
+only the per-action bias differs, so a call with AA still reads as a call
+with AA no matter which fly is looking at it. The sampled parameters print
+to the server's console each game (`[flypoker] fly1: aggression=... fold_tendency=...`)
+if a run's behavior ever looks worth double-checking.
+
+The side panel shows real-time spike counts for whichever fly most
+recently acted (there's no single "the" opponent at a 4-way table) --
+`circuit-focus` in `main.js` labels which one is currently on screen -- and
+draws the actual connectome as a live circuit: real neurons (dots, colored
+by role) and a sample of their real synapses (faint lines), positioned by
+`circuit_layout.json` (see "Circuit data" above), with neurons glowing
+briefly as they spike. `brain.py`'s `LIFNetwork.run(..., record=True)`
+captures a decision's full spike train (routinely 15-20k events over the
+150-step simulation for this connectome's activity level -- roughly a
+third of all 6194 neurons firing at least once); `server.py`'s
+`bin_spikes_for_ui` compresses that into a time-binned, capped sample
+(~1200 neurons, evenly strided across the whole decision so late-firing
+neurons -- which can include the out:action neurons the decision itself
+reads off of -- aren't the ones silently dropped) before sending it, and
+`frontend/main.js` animates the glow from that.
 
 Raising isn't limited to two fixed presets: clicking "加注" opens a
 bet-sizing panel (quick 1/2-pot / pot / 2x-pot / all-in buttons, plus a
@@ -171,12 +227,69 @@ free-drag slider and a number input) like a normal poker client, and sends
 the exact chosen total to the engine (`poker.py`'s `_betting_round` accepts
 an explicit "raise to" amount from any agent, not just a preset).
 
-When both players are all-in with no more decisions left, the remaining
-streets are dealt out one at a time with a short pause between each (see
-`HeadsUpHand.play`'s `on_street_dealt` callback), rather than jumping
-straight to the showdown -- the brain panel keeps updating through the
-run-out too (cosmetic only: no real decision is being made, so it doesn't
-touch the decoder).
+When a player is all-in with no more decisions left for them, the
+remaining streets are dealt out one at a time with a short pause between
+each (see `MultiWayHand.play`'s `on_street_dealt` callback), rather than
+jumping straight to the showdown -- the brain panel keeps updating through
+the run-out too (cosmetic only: no real decision is being made, so it
+doesn't touch the decoder).
+
+## Deploying
+
+The server has no runtime dependency on neuPrint or any secret -- only the
+offline `scripts/build_*.py` tools touch `NEUPRINT_TOKEN`, and those have
+already produced the data files this needs (`data/circuit.npz`,
+`data/circuit_meta.json`, `data/circuit_layout.json`,
+`data/circuit_positions.json`, `frontend/brain.stl`, `runs/decoder.npz`) --
+all small, all committed to this repo, nothing to regenerate at deploy time.
+
+**Run with Docker anywhere:**
+
+```bash
+docker build -t flypoker .
+docker run -p 8420:8420 -v flypoker_data:/data \
+  -e FLYPOKER_LEARN_DIR=/data/runs flypoker
+```
+
+Then open http://localhost:8420 (or the host's address, from another device
+on the same network). `-v .../data` is what makes the flies' learned
+decoder and hand log (`runs/decoder.learned.npz`, `learning_state.json`,
+`hand_log.jsonl` -- see "Online learning" below) survive a container
+restart; skip it only for a disposable, learns-nothing-persistent instance.
+
+**Deploy to the open internet (Fly.io):** `fly.toml` is a ready-to-edit
+template -- change `app = "flypoker"` to a name that's actually free, then:
+
+```bash
+fly auth login       # creates/logs into your own Fly.io account in a browser
+fly launch --no-deploy   # detects fly.toml, offers to create the app + volume
+fly deploy
+```
+
+Any other host that runs a single Docker container with a persistent volume
+and WebSocket support (Render, Railway, a plain VPS, ...) works the same
+way; just set `FLYPOKER_LEARN_DIR` to wherever that host's persistent disk
+is mounted. A serverless/edge-function host (Vercel, Cloudflare Workers,
+...) **will not work** -- game state and the shared learning hub live in
+one long-running process's memory, which that model doesn't provide, and
+without a persistent volume the flies would forget everything on every cold
+start.
+
+Environment variables the server reads:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `HOST` | `0.0.0.0` | interface to bind |
+| `PORT` | `8420` | port to listen on |
+| `FLYPOKER_LEARN_DIR` | `runs/` | where the *live* learned decoder, hand log, and learning state get written (keep this on a persistent volume in production; `runs/decoder.npz`, the starting prior, is always read from the image instead, never from here) |
+| `MAX_CONCURRENT_GAMES` | `60` | a process-wide cap on simultaneous open games -- each one is a background thread plus a slice of the shared learning hub's time, and nothing else limited how many a public URL could accumulate |
+
+Only run **one process** of this app (one Docker container / one Fly
+machine / `uvicorn`'s default single worker) -- see the Dockerfile's note on
+why: per-connection game state and the shared `LearningHub` both live in
+that one process's memory, so a second worker would silently put different
+players on inconsistent copies of the fly brain instead of sharing one.
+Scale by giving more CPU/RAM to the one instance, not by adding workers.
 
 ## Tuning / known rough edges
 

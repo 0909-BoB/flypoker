@@ -133,6 +133,9 @@ class Observation:
     is_button: bool
     street_actions: list[Action] = field(default_factory=list)
     my_bet: int = 0  # this seat's cumulative chips committed so far this hand
+    active_opponents: int = 1  # non-folded opponents left; >1 at a multi-way table
+    big_blind: int = 20
+    max_opp_stack: int = 0  # deepest non-folded opponent's stack; 0 = unknown (fall back to opp_stack)
 
 
 @dataclass
@@ -258,6 +261,7 @@ class HeadsUpHand:
                     pot=bets[0] + bets[1], to_call=to_call, my_stack=stacks[seat],
                     opp_stack=stacks[other], is_button=(seat == 0),
                     street_actions=list(actions_taken), my_bet=bets[seat],
+                    big_blind=self.bb, max_opp_stack=stacks[other],
                 )
                 result = agents[seat].act(obs)
                 # An agent may return a bare Action (fly/bot: fixed pot-relative
@@ -295,6 +299,8 @@ class HeadsUpHand:
                         else:  # ALL_IN
                             raise_amt = stacks[seat]
                         total = min(to_call + max(raise_amt, self.bb), stacks[seat])
+                        if stacks[seat] - total < max(self.bb, stacks[seat] / 3):
+                            total = stacks[seat]  # same shove-instead-of-sliver rule as MultiWayHand
                     stacks[seat] -= total
                     bets[seat] += total
                     acted[other] = False
@@ -303,6 +309,238 @@ class HeadsUpHand:
                 actions_taken.append(action)
 
             if bets[0] == bets[1] and all(acted.values()):
+                break
+            if not progressed:
+                break
+        return folded, bets
+
+
+@dataclass
+class SidePot:
+    amount: int
+    eligible_seats: list[int]
+
+
+@dataclass
+class MultiHandResult:
+    payoff: list[int]  # chip delta per seat
+    showdown: bool
+    final_pot: int
+    log: list[str]
+    winners_by_pot: list[list[int]]
+    showdown_seats: list[int] = field(default_factory=list)  # non-folded seats to reveal, if showdown
+
+
+def compute_side_pots(bets: list[int], folded: list[bool]) -> list[SidePot]:
+    """Standard side-pot layering: sort the distinct contribution levels,
+    and for each layer charge everyone who put in at least that much (a
+    player who went all-in for less doesn't pay into -- or win -- the
+    layers above their own contribution)."""
+    levels = sorted(set(b for b in bets if b > 0))
+    pots: list[SidePot] = []
+    prev = 0
+    for level in levels:
+        payers = [i for i, b in enumerate(bets) if b >= level]
+        layer_amount = (level - prev) * len(payers)
+        if layer_amount > 0:
+            eligible = [i for i in payers if not folded[i]]
+            # Two adjacent layers with the exact same eligible seats (e.g.
+            # everyone who could contest the lower layer also folded or
+            # matched exactly at the same point, common once only two
+            # players are left contesting a pot no one else can win any
+            # part of) split the money identically either way -- merge
+            # them so the log doesn't show two "different" pots that are
+            # really the same contest counted twice.
+            if pots and pots[-1].eligible_seats == eligible:
+                pots[-1] = SidePot(pots[-1].amount + layer_amount, eligible)
+            else:
+                pots.append(SidePot(layer_amount, eligible))
+        prev = level
+    return pots
+
+
+class MultiWayHand:
+    """N-player (N >= 2) no-limit Hold'em with side pots, for a table of
+    more than one opponent. Seat 0 is the button, seat 1 the small blind,
+    seat 2 the big blind, seats 3..N-1 the rest in table order (so seat 3
+    is under the gun and acts first preflop, for N=4). Heads-up (N=2) is
+    handled the same way HeadsUpHand does it (button/SB acts first
+    preflop, last postflop) since the "everyone after the blinds" rotation
+    used for N>2 doesn't apply with no seats past the blinds.
+
+    Kept as a separate class from HeadsUpHand rather than folding N=2 into
+    it, so the well-exercised 1-on-1 engine (and everything trained/tested
+    against it) is untouched by this."""
+
+    def __init__(self, n_players: int, stacks: list[int], small_blind: int = 10,
+                 big_blind: int = 20, rng: random.Random | None = None):
+        assert n_players >= 2
+        self.n = n_players
+        self.rng = rng or random.Random()
+        deck = make_deck()
+        self.rng.shuffle(deck)
+        self.hole = [deck[2 * i:2 * i + 2] for i in range(n_players)]
+        self.board_deck = deck[2 * n_players:]
+        self.stacks = list(stacks)
+        self.sb, self.bb = small_blind, big_blind
+
+    def _preflop_order(self) -> list[int]:
+        if self.n == 2:
+            return [0, 1]
+        return list(range(3, self.n)) + [0, 1, 2]
+
+    def _postflop_order(self) -> list[int]:
+        if self.n == 2:
+            return [1, 0]
+        return list(range(1, self.n)) + [0]
+
+    def play(self, agents: list, on_street_dealt=None) -> MultiHandResult:
+        log: list[str] = []
+        bets = [0] * self.n
+        stacks = self.stacks
+        sb_seat, bb_seat = (0, 1) if self.n == 2 else (1, 2)
+        sb_amt = min(self.sb, stacks[sb_seat])
+        bb_amt = min(self.bb, stacks[bb_seat])
+        stacks[sb_seat] -= sb_amt
+        stacks[bb_seat] -= bb_amt
+        bets[sb_seat] += sb_amt
+        bets[bb_seat] += bb_amt
+        board: list[Card] = []
+        folded = [False] * self.n
+        all_in_runout = False
+
+        for street in STREETS:
+            if street != "preflop":
+                n_new = {"flop": 3, "turn": 1, "river": 1}[street]
+                board.extend(self.board_deck[:n_new])
+                self.board_deck = self.board_deck[n_new:]
+                if all_in_runout and on_street_dealt:
+                    on_street_dealt(street, list(board))
+            active = [i for i in range(self.n) if not folded[i]]
+            if len(active) > 1:
+                folded, bets = self._betting_round(agents, street, board, bets, stacks, folded, log)
+            active = [i for i in range(self.n) if not folded[i]]
+            if len(active) <= 1:
+                break
+            if sum(1 for i in active if stacks[i] > 0) <= 1:
+                all_in_runout = True
+
+        pot = sum(bets)
+        active = [i for i in range(self.n) if not folded[i]]
+
+        if len(active) <= 1:
+            winner = active[0]
+            payoff = [-b for b in bets]
+            payoff[winner] += pot
+            log.append(f"seat {winner} wins uncontested pot {pot} (all others folded)")
+            return MultiHandResult(payoff, False, pot, log, [[winner]])
+
+        pots = compute_side_pots(bets, folded)
+        payoff = [-b for b in bets]
+        scores: dict[int, tuple] = {}
+        winners_by_pot: list[list[int]] = []
+        for side_pot in pots:
+            for i in side_pot.eligible_seats:
+                if i not in scores:
+                    scores[i] = best_hand(self.hole[i] + board)
+            best_score = max(scores[i] for i in side_pot.eligible_seats)
+            winners = [i for i in side_pot.eligible_seats if scores[i] == best_score]
+            share, remainder = divmod(side_pot.amount, len(winners))
+            for k, w in enumerate(winners):
+                payoff[w] += share + (1 if k < remainder else 0)
+            winners_by_pot.append(winners)
+
+        hands_desc = ", ".join(
+            f"seat{i}={self.hole[i]}({hand_category_name(scores[i])})" for i in sorted(scores)
+        )
+        log.append(
+            f"showdown board={board} {hands_desc} pots="
+            f"{[(p.amount, p.eligible_seats) for p in pots]} winners_by_pot={winners_by_pot}"
+        )
+        return MultiHandResult(payoff, True, pot, log, winners_by_pot, showdown_seats=active)
+
+    def _betting_round(self, agents, street, board, bets, stacks, folded, log):
+        order = self._preflop_order() if street == "preflop" else self._postflop_order()
+        actions_taken: list[Action] = []
+        acted = {i: False for i in range(self.n)}
+
+        while True:
+            progressed = False
+            for seat in order:
+                if folded[seat]:
+                    continue
+                active_seats = [i for i in range(self.n) if not folded[i]]
+                current_max = max(bets[i] for i in active_seats)
+                to_call = current_max - bets[seat]
+                if acted[seat] and to_call == 0:
+                    continue
+                if stacks[seat] == 0:
+                    acted[seat] = True
+                    continue
+
+                others = [i for i in active_seats if i != seat]
+                obs = Observation(
+                    seat=seat, hole=self.hole[seat], board=list(board), street=street,
+                    pot=sum(bets), to_call=to_call, my_stack=stacks[seat],
+                    opp_stack=sum(stacks[i] for i in others), is_button=(seat == 0),
+                    street_actions=list(actions_taken), my_bet=bets[seat],
+                    active_opponents=len(others), big_blind=self.bb,
+                    max_opp_stack=max(stacks[i] for i in others),
+                )
+                result = agents[seat].act(obs)
+                if isinstance(result, tuple):
+                    action, raise_to = result
+                else:
+                    action, raise_to = result, None
+                progressed = True
+                acted[seat] = True
+
+                if action == Action.FOLD and to_call > 0:
+                    folded[seat] = True
+                    actions_taken.append(action)
+                    log.append(f"[{street}] seat{seat} folds")
+                    if sum(1 for i in range(self.n) if not folded[i]) <= 1:
+                        return folded, bets
+                    continue
+
+                if action == Action.CHECK_CALL:
+                    call_amt = min(to_call, stacks[seat])
+                    stacks[seat] -= call_amt
+                    bets[seat] += call_amt
+                    log.append(f"[{street}] seat{seat} " + ("checks" if to_call == 0 else f"calls {call_amt}"))
+                else:
+                    if raise_to is not None:
+                        total = max(to_call + self.bb, raise_to - bets[seat])
+                        total = min(total, stacks[seat])
+                    else:
+                        pot_now = sum(bets)
+                        if action == Action.RAISE_SMALL:
+                            raise_amt = int(pot_now * 0.5)
+                        elif action == Action.RAISE_BIG:
+                            raise_amt = int(pot_now * 1.0)
+                        else:  # ALL_IN
+                            raise_amt = stacks[seat]
+                        total = min(to_call + max(raise_amt, self.bb), stacks[seat])
+                        # A preset raise that would leave only a sliver
+                        # behind (under a big blind, or under a third of the
+                        # stack) is effectively a shove already -- treat it
+                        # as one instead of stranding a meaningless tail.
+                        leftover = stacks[seat] - total
+                        if leftover < max(self.bb, stacks[seat] / 3):
+                            total = stacks[seat]
+                    stacks[seat] -= total
+                    bets[seat] += total
+                    for i in range(self.n):
+                        if i != seat and not folded[i]:
+                            acted[i] = False
+                    acted[seat] = True
+                    tag = f" ({action.name})" if raise_to is None else ""
+                    log.append(f"[{street}] seat{seat} raises to {bets[seat]}{tag}")
+                actions_taken.append(action)
+
+            active_seats = [i for i in range(self.n) if not folded[i]]
+            current_max = max(bets[i] for i in active_seats)
+            if all((stacks[i] == 0) or (acted[i] and bets[i] == current_max) for i in active_seats):
                 break
             if not progressed:
                 break
