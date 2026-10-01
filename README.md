@@ -74,6 +74,48 @@ python3 -m venv .venv
 保留，在 `docker run` 後面加上
 `-v flypoker_data:/data -e FLYPOKER_LEARN_DIR=/data/runs` 即可。
 
+### Playing on a phone / "installing" it as an app
+
+The frontend has a [web manifest](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest)
+(`frontend/manifest.json`, linked from `index.html`) and the icons it
+points at, so a phone browser can "Add to Home Screen": the result is a
+full-screen icon with no address bar, launched like a regular app, without
+any app store or download. That's just a nicer launcher, though -- it
+still has to reach a running server. The simplest case is a phone on the
+same Wi-Fi as whatever computer is running `flypoker.server`:
+
+1. On that computer, find its LAN IP (macOS: `ipconfig getifaddr en0`;
+   Linux: `hostname -I`; Windows: `ipconfig`).
+2. On the phone's browser, open `http://<that IP>:8420`.
+3. **iPhone (Safari):** Share button -> "Add to Home Screen".
+   **Android (Chrome):** ⋮ menu -> "Install app" / "Add to Home Screen".
+
+Off that Wi-Fi (e.g. away from home), that LAN IP stops resolving -- the
+same icon still works once the computer is reachable some other way (a
+real deployment per "Deploying" above, or a personal mesh-network tool
+like [Tailscale](https://tailscale.com/) so the phone can reach the
+computer directly without opening it to the whole internet).
+
+### 在手機上玩／把它「安裝」成一個 app
+
+前端有一份 [web manifest](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest)
+（`frontend/manifest.json`，`index.html` 裡有連結）和對應的圖示，所以手機
+瀏覽器可以「加入主畫面」：結果是一個全螢幕、沒有網址列的圖示，點開就像開
+一般的 app，不需要透過任何 App Store 或下載安裝檔。不過這終究只是讓啟動
+方式變好看——手機還是要連得到一台正在跑的伺服器。最簡單的情況是手機跟那
+台跑 `flypoker.server` 的電腦在同一個 Wi-Fi：
+
+1. 在那台電腦上查出它的區網 IP（macOS：`ipconfig getifaddr en0`；Linux：
+   `hostname -I`；Windows：`ipconfig`）。
+2. 手機瀏覽器打開 `http://<那個 IP>:8420`。
+3. **iPhone（Safari）**：點下方分享鍵 →「加入主畫面」。
+   **Android（Chrome）**：右上角 ⋮ 選單 →「安裝應用程式」／「加入主畫面」。
+
+離開那個 Wi-Fi（例如出門在外）就連不到那個區網 IP 了——同一個主畫面圖示
+還是能用，只要電腦能用別的方式連得到就行，例如照上面「Deploying」段落真
+的部署一份，或是用 [Tailscale](https://tailscale.com/) 這類個人網狀網路
+工具，讓手機能直接連到那台電腦，而不用把它整個開放給公開網際網路。
+
 ## Honest framing, up front
 
 A fly's brain has no concept of pot odds, stack-to-pot ratio, or bluffing —

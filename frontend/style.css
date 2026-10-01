@@ -23,6 +23,14 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  /* viewport-fit=cover (index.html) lets a standalone "Add to Home Screen"
+     icon draw edge-to-edge on a notched phone; without this padding the
+     header would render underneath the notch/status bar instead of below
+     it. A no-op on a normal browser tab, where these env() vars are 0. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 .app { max-width: 1200px; margin: 0 auto; padding: 16px; }
